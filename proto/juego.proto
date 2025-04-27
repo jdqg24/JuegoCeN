@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package juego;
+
+option go_package = "JuegoCeN/proto;juego";
+
+service JuegoService {
+  rpc MoverJugador(MovimientoRequest) returns (MovimientoResponse);
+}
+
+message MovimientoRequest {
+  string jugador_id = 1;
+  string direccion = 2;
+}
+
+message MovimientoResponse {
+  string resultado = 1;
+}
