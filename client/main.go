@@ -160,12 +160,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StateWaitingRoom:
 		ebitenutil.DrawRect(screen, 180, 240, 440, 140, color.RGBA{0, 0, 0, 200})
 		text.Draw(screen, "Esperando a que alguien se una a la sala...", basicfont.Face7x13, 200, 300, color.White)
-		text.Draw(screen, fmt.Sprintf("Código: %s", g.roomCode), basicfont.Face7x13, 300, 340, color.White)
+		text.Draw(screen, fmt.Sprintf("Codigo: %s", g.roomCode), basicfont.Face7x13, 300, 340, color.White)
 	case StateJoinRoom:
 		ebitenutil.DrawRect(screen, 180, 240, 440, 180, color.RGBA{0, 0, 0, 200})
-		text.Draw(screen, "Introduce el código de la sala:", basicfont.Face7x13, 200, 270, color.White)
-		text.Draw(screen, g.inputCode, basicfont.Face7x13, 360, 310, color.White)
-		text.Draw(screen, "Haz clic en INGRESAR", basicfont.Face7x13, 260, 350, color.White)
+		text.Draw(screen, "Introduce el codigo de la sala:", basicfont.Face7x13, 200, 270, color.White)
 		// botón INGRESAR
 		btnX, btnY, btnW, btnH := 320.0, 370.0, 160.0, 30.0
 		ebitenutil.DrawRect(screen, btnX, btnY, btnW, btnH, color.RGBA{100, 100, 200, 255})
