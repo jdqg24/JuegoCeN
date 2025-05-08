@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"image/color"
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"google.golang.org/grpc"
-
-	"image/color"
 
 	pb "JuegoCeN/proto"
 )
@@ -61,9 +61,9 @@ func (g *Game) Update() error {
 	}
 	// handle input
 	move := "NONE"
-	if ebiten.IsKeyPressed(ebiten.KeyW) {
+	if ebiten.IsKeyPressed(ebiten.KeyS) {
 		move = "UP"
-	} else if ebiten.IsKeyPressed(ebiten.KeyS) {
+	} else if ebiten.IsKeyPressed(ebiten.KeyW) {
 		move = "DOWN"
 	}
 	// send action
@@ -85,7 +85,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	p1y := float64(g.state.Paddle1.Y)*float64(h) - 30
 	ebitenutil.DrawRect(screen, 10, p1y, 10, 60, color.White)
 	p2y := float64(g.state.Paddle2.Y)*float64(h) - 30
-	// right paddle
 	ebitenutil.DrawRect(screen, float64(w-20), p2y, 10, 60, color.White)
 	// draw simple scores
 	ebitenutil.DebugPrintAt(screen,
@@ -100,6 +99,10 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
+	// add a flag for player ID
+	playerID := flag.String("id", "1", "Player ID: \"1\" or \"2\"")
+	flag.Parse()
+
 	// connect to gRPC server
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
@@ -117,11 +120,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get initial state: %v", err)
 	}
-	// choose player ID ("1" or "2")
-	playerID := "1"
-	game := NewGame(stream, initial, playerID)
+
 	ebiten.SetWindowSize(800, 600)
-	ebiten.SetWindowTitle("Ping Pong")
+	ebiten.SetWindowTitle(fmt.Sprintf("Ping Pong - Player %s", *playerID))
+	// start game
+	game := NewGame(stream, initial, *playerID)
 	if err := ebiten.RunGame(game); err != nil {
 		log.Fatalf("Game exited with error: %v", err)
 	}
