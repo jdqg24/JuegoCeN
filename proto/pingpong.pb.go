@@ -22,10 +22,10 @@ const (
 )
 
 type GameAction struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	PlayerId string                 `protobuf:"bytes,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
-	// e.g. "UP", "DOWN", "NONE"
-	Move          string `protobuf:"bytes,2,opt,name=move,proto3" json:"move,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PlayerId      string                 `protobuf:"bytes,1,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"`
+	Move          string                 `protobuf:"bytes,2,opt,name=move,proto3" json:"move,omitempty"`
+	RoomCode      string                 `protobuf:"bytes,3,opt,name=room_code,json=roomCode,proto3" json:"room_code,omitempty"` // ← lo agregas aquí
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -74,28 +74,35 @@ func (x *GameAction) GetMove() string {
 	return ""
 }
 
-type Position struct {
+func (x *GameAction) GetRoomCode() string {
+	if x != nil {
+		return x.RoomCode
+	}
+	return ""
+}
+
+type Vector struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	X             float32                `protobuf:"fixed32,1,opt,name=x,proto3" json:"x,omitempty"`
-	Y             float32                `protobuf:"fixed32,2,opt,name=y,proto3" json:"y,omitempty"`
+	X             float32                `protobuf:"fixed32,1,opt,name=X,proto3" json:"X,omitempty"`
+	Y             float32                `protobuf:"fixed32,2,opt,name=Y,proto3" json:"Y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Position) Reset() {
-	*x = Position{}
+func (x *Vector) Reset() {
+	*x = Vector{}
 	mi := &file_proto_pingpong_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Position) String() string {
+func (x *Vector) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Position) ProtoMessage() {}
+func (*Vector) ProtoMessage() {}
 
-func (x *Position) ProtoReflect() protoreflect.Message {
+func (x *Vector) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_pingpong_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -107,19 +114,19 @@ func (x *Position) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Position.ProtoReflect.Descriptor instead.
-func (*Position) Descriptor() ([]byte, []int) {
+// Deprecated: Use Vector.ProtoReflect.Descriptor instead.
+func (*Vector) Descriptor() ([]byte, []int) {
 	return file_proto_pingpong_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Position) GetX() float32 {
+func (x *Vector) GetX() float32 {
 	if x != nil {
 		return x.X
 	}
 	return 0
 }
 
-func (x *Position) GetY() float32 {
+func (x *Vector) GetY() float32 {
 	if x != nil {
 		return x.Y
 	}
@@ -128,11 +135,13 @@ func (x *Position) GetY() float32 {
 
 type GameState struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ball          *Position              `protobuf:"bytes,1,opt,name=Ball,proto3" json:"Ball,omitempty"`
-	Paddle1       *Position              `protobuf:"bytes,2,opt,name=Paddle1,proto3" json:"Paddle1,omitempty"`
-	Paddle2       *Position              `protobuf:"bytes,3,opt,name=Paddle2,proto3" json:"Paddle2,omitempty"`
-	Score1        int32                  `protobuf:"varint,4,opt,name=Score1,proto3" json:"Score1,omitempty"`
-	Score2        int32                  `protobuf:"varint,5,opt,name=Score2,proto3" json:"Score2,omitempty"`
+	RoomCode      string                 `protobuf:"bytes,1,opt,name=room_code,json=roomCode,proto3" json:"room_code,omitempty"`
+	Ball          *Vector                `protobuf:"bytes,2,opt,name=Ball,proto3" json:"Ball,omitempty"`
+	Paddle1       *Vector                `protobuf:"bytes,3,opt,name=Paddle1,proto3" json:"Paddle1,omitempty"`
+	Paddle2       *Vector                `protobuf:"bytes,4,opt,name=Paddle2,proto3" json:"Paddle2,omitempty"`
+	Score1        int32                  `protobuf:"varint,5,opt,name=Score1,proto3" json:"Score1,omitempty"`
+	Score2        int32                  `protobuf:"varint,6,opt,name=Score2,proto3" json:"Score2,omitempty"`
+	PlayerId      string                 `protobuf:"bytes,7,opt,name=player_id,json=playerId,proto3" json:"player_id,omitempty"` // si lo necesitas también
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -167,21 +176,28 @@ func (*GameState) Descriptor() ([]byte, []int) {
 	return file_proto_pingpong_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *GameState) GetBall() *Position {
+func (x *GameState) GetRoomCode() string {
+	if x != nil {
+		return x.RoomCode
+	}
+	return ""
+}
+
+func (x *GameState) GetBall() *Vector {
 	if x != nil {
 		return x.Ball
 	}
 	return nil
 }
 
-func (x *GameState) GetPaddle1() *Position {
+func (x *GameState) GetPaddle1() *Vector {
 	if x != nil {
 		return x.Paddle1
 	}
 	return nil
 }
 
-func (x *GameState) GetPaddle2() *Position {
+func (x *GameState) GetPaddle2() *Vector {
 	if x != nil {
 		return x.Paddle2
 	}
@@ -202,26 +218,36 @@ func (x *GameState) GetScore2() int32 {
 	return 0
 }
 
+func (x *GameState) GetPlayerId() string {
+	if x != nil {
+		return x.PlayerId
+	}
+	return ""
+}
+
 var File_proto_pingpong_proto protoreflect.FileDescriptor
 
 const file_proto_pingpong_proto_rawDesc = "" +
 	"\n" +
-	"\x14proto/pingpong.proto\x12\bpingpong\"=\n" +
+	"\x14proto/pingpong.proto\x12\bpingpong\"Z\n" +
 	"\n" +
 	"GameAction\x12\x1b\n" +
 	"\tplayer_id\x18\x01 \x01(\tR\bplayerId\x12\x12\n" +
-	"\x04move\x18\x02 \x01(\tR\x04move\"&\n" +
-	"\bPosition\x12\f\n" +
-	"\x01x\x18\x01 \x01(\x02R\x01x\x12\f\n" +
-	"\x01y\x18\x02 \x01(\x02R\x01y\"\xbf\x01\n" +
-	"\tGameState\x12&\n" +
-	"\x04Ball\x18\x01 \x01(\v2\x12.pingpong.PositionR\x04Ball\x12,\n" +
-	"\aPaddle1\x18\x02 \x01(\v2\x12.pingpong.PositionR\aPaddle1\x12,\n" +
-	"\aPaddle2\x18\x03 \x01(\v2\x12.pingpong.PositionR\aPaddle2\x12\x16\n" +
-	"\x06Score1\x18\x04 \x01(\x05R\x06Score1\x12\x16\n" +
-	"\x06Score2\x18\x05 \x01(\x05R\x06Score22A\n" +
+	"\x04move\x18\x02 \x01(\tR\x04move\x12\x1b\n" +
+	"\troom_code\x18\x03 \x01(\tR\broomCode\"$\n" +
+	"\x06Vector\x12\f\n" +
+	"\x01X\x18\x01 \x01(\x02R\x01X\x12\f\n" +
+	"\x01Y\x18\x02 \x01(\x02R\x01Y\"\xf3\x01\n" +
+	"\tGameState\x12\x1b\n" +
+	"\troom_code\x18\x01 \x01(\tR\broomCode\x12$\n" +
+	"\x04Ball\x18\x02 \x01(\v2\x10.pingpong.VectorR\x04Ball\x12*\n" +
+	"\aPaddle1\x18\x03 \x01(\v2\x10.pingpong.VectorR\aPaddle1\x12*\n" +
+	"\aPaddle2\x18\x04 \x01(\v2\x10.pingpong.VectorR\aPaddle2\x12\x16\n" +
+	"\x06Score1\x18\x05 \x01(\x05R\x06Score1\x12\x16\n" +
+	"\x06Score2\x18\x06 \x01(\x05R\x06Score2\x12\x1b\n" +
+	"\tplayer_id\x18\a \x01(\tR\bplayerId2A\n" +
 	"\bPingPong\x125\n" +
-	"\x04Play\x12\x14.pingpong.GameAction\x1a\x13.pingpong.GameState(\x010\x01B\x12Z\x10./proto;pingpongb\x06proto3"
+	"\x04Play\x12\x14.pingpong.GameAction\x1a\x13.pingpong.GameState(\x010\x01B\x19Z\x17JuegoCeN/proto;pingpongb\x06proto3"
 
 var (
 	file_proto_pingpong_proto_rawDescOnce sync.Once
@@ -238,13 +264,13 @@ func file_proto_pingpong_proto_rawDescGZIP() []byte {
 var file_proto_pingpong_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_proto_pingpong_proto_goTypes = []any{
 	(*GameAction)(nil), // 0: pingpong.GameAction
-	(*Position)(nil),   // 1: pingpong.Position
+	(*Vector)(nil),     // 1: pingpong.Vector
 	(*GameState)(nil),  // 2: pingpong.GameState
 }
 var file_proto_pingpong_proto_depIdxs = []int32{
-	1, // 0: pingpong.GameState.Ball:type_name -> pingpong.Position
-	1, // 1: pingpong.GameState.Paddle1:type_name -> pingpong.Position
-	1, // 2: pingpong.GameState.Paddle2:type_name -> pingpong.Position
+	1, // 0: pingpong.GameState.Ball:type_name -> pingpong.Vector
+	1, // 1: pingpong.GameState.Paddle1:type_name -> pingpong.Vector
+	1, // 2: pingpong.GameState.Paddle2:type_name -> pingpong.Vector
 	0, // 3: pingpong.PingPong.Play:input_type -> pingpong.GameAction
 	2, // 4: pingpong.PingPong.Play:output_type -> pingpong.GameState
 	4, // [4:5] is the sub-list for method output_type

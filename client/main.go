@@ -2,12 +2,9 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -19,14 +16,13 @@ import (
 	pb "JuegoCeN/proto"
 )
 
-type GameState int
+type State int
 
 const (
-	StateMenu GameState = iota
-	StateWaitingRoom
-	StateJoinRoom
-	StateLeaderboard
+	StateMenu State = iota
+	StateWaiting
 	StatePlaying
+	StateOpponentLeft
 )
 
 type Button struct {
@@ -36,167 +32,204 @@ type Button struct {
 }
 
 type Game struct {
-	state       GameState
+	client      pb.PingPongClient
+	conn        *grpc.ClientConn
 	stream      pb.PingPong_PlayClient
+	state       State
 	updates     chan *pb.GameState
-	playerID    string
+	errChan     chan error
+	menuBg      *ebiten.Image
+	gameBg      *ebiten.Image
+	button      Button
 	gameState   *pb.GameState
-	buttons     []Button
-	roomCode    string
-	bgImage     *ebiten.Image
-	inputCode   string
+	playerID    string
 	joiningDone bool
+	leftAt      time.Time
+	lastUpdate  time.Time
 }
 
-func NewGame() *Game {
-	img, _, err := ebitenutil.NewImageFromFile("robot.png")
+func NewGame(client pb.PingPongClient, conn *grpc.ClientConn) *Game {
+	menuImg, _, err := ebitenutil.NewImageFromFile("client/robot.png")
 	if err != nil {
-		log.Fatalf("No se pudo cargar la imagen de fondo: %v", err)
+		log.Fatalf("No se pudo cargar robot.png: %v", err)
 	}
+	gameImg, _, err := ebitenutil.NewImageFromFile("client/fondo.png")
+	if err != nil {
+		log.Fatalf("No se pudo cargar fondo.png: %v", err)
+	}
+
 	g := &Game{
-		state:   StateMenu,
-		updates: make(chan *pb.GameState, 1),
-		bgImage: img,
+		client:     client,
+		conn:       conn,
+		state:      StateMenu,
+		menuBg:     menuImg,
+		gameBg:     gameImg,
+		lastUpdate: time.Now(),
 	}
-	g.initMenu()
-	return g
-}
 
-func (g *Game) initMenu() {
-	centerX := 400.0
-	startY := 250.0
-	buttonW := 200.0
-	buttonH := 50.0
-	gap := 70.0
-
-	g.buttons = []Button{
-		{"Crear Sala", centerX - buttonW/2, startY, buttonW, buttonH, func() {
-			g.state = StateWaitingRoom
-			g.roomCode = generateRoomCode()
-		}},
-		{"Unirse a Sala", centerX - buttonW/2, startY + gap, buttonW, buttonH, func() {
-			g.state = StateJoinRoom
-			g.inputCode = ""
+	g.button = Button{
+		label: "Unirse a una partida",
+		x:     300, y: 280, w: 200, h: 50,
+		onClick: func() {
+			g.state = StateWaiting
 			g.joiningDone = false
-		}},
-		{"Tabla de Posiciones", centerX - buttonW/2, startY + 2*gap, buttonW, buttonH, func() {
-			g.state = StateLeaderboard
-		}},
+			g.gameState = nil
+			g.playerID = ""
+			g.updates = make(chan *pb.GameState, 1)
+			g.errChan = make(chan error, 1)
+			// abrir stream
+			stream, err := g.client.Play(context.Background())
+			if err != nil {
+				log.Printf("No se pudo abrir Play: %v", err)
+				g.state = StateMenu
+				return
+			}
+			g.stream = stream
+			go g.receiveUpdates()
+		},
 	}
+
+	return g
 }
 
 func (g *Game) receiveUpdates() {
 	for {
 		st, err := g.stream.Recv()
 		if err != nil {
-			log.Printf("Error receiving state: %v", err)
+			g.errChan <- err
 			return
 		}
+
+		g.lastUpdate = time.Now()
+
 		select {
 		case g.updates <- st:
 		default:
 		}
+
 	}
 }
 
 func (g *Game) Update() error {
-	if g.state == StateMenu && ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		x, y := ebiten.CursorPosition()
-		for _, btn := range g.buttons {
-			if float64(x) >= btn.x && float64(x) <= btn.x+btn.w && float64(y) >= btn.y && float64(y) <= btn.y+btn.h {
-				btn.onClick()
+	switch g.state {
+	case StateMenu:
+		if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if float64(x) >= g.button.x && float64(x) <= g.button.x+g.button.w &&
+				float64(y) >= g.button.y && float64(y) <= g.button.y+g.button.h {
+				g.button.onClick()
 			}
 		}
-		return nil
-	}
 
-	if g.state == StateJoinRoom && !g.joiningDone {
-		for _, key := range ebiten.InputChars() {
-			if key == '\n' || key == '\r' {
-				g.roomCode = g.inputCode
-				g.state = StatePlaying
-				g.joiningDone = true
-			} else if key == 8 || key == 127 {
-				if len(g.inputCode) > 0 {
-					g.inputCode = g.inputCode[:len(g.inputCode)-1]
-				}
-			} else if len(g.inputCode) < 4 && (key >= 'A' && key <= 'Z' || key >= 'a' && key <= 'z') {
-				g.inputCode += string(key)
-			}
-		}
-	}
-
-	if g.state == StatePlaying {
+	case StateWaiting:
 		select {
+		case err := <-g.errChan:
+			log.Printf("Error de stream en espera: %v", err)
+			g.state = StateOpponentLeft
+			g.leftAt = time.Now()
+			return nil
+		case st := <-g.updates:
+			g.gameState = st
+			g.playerID = st.PlayerId
+			g.state = StatePlaying
+			return nil
+		default:
+			if !g.joiningDone {
+				g.stream.Send(&pb.GameAction{RoomCode: ""})
+				g.joiningDone = true
+			}
+		}
+
+	case StatePlaying:
+
+		if time.Since(g.lastUpdate) > 2*time.Second {
+			g.state = StateOpponentLeft
+			g.leftAt = time.Now()
+			return nil
+		}
+
+		select {
+		case err := <-g.errChan:
+			log.Printf("Error de stream en juego: %v", err)
+			g.state = StateOpponentLeft
+			g.leftAt = time.Now()
+			return nil
 		case st := <-g.updates:
 			g.gameState = st
 		default:
 		}
-		move := "NONE"
-		if ebiten.IsKeyPressed(ebiten.KeyS) {
-			move = "UP"
-		} else if ebiten.IsKeyPressed(ebiten.KeyW) {
-			move = "DOWN"
+
+		if g.gameState != nil {
+			move := "NONE"
+			if ebiten.IsKeyPressed(ebiten.KeyW) {
+				move = "UP"
+			} else if ebiten.IsKeyPressed(ebiten.KeyS) {
+				move = "DOWN"
+			}
+			g.stream.Send(&pb.GameAction{
+				PlayerId: g.playerID,
+				Move:     move,
+				RoomCode: "",
+			})
 		}
-		action := &pb.GameAction{PlayerId: g.playerID, Move: move}
-		if err := g.stream.Send(action); err != nil {
-			log.Printf("Error sending action: %v", err)
+
+	case StateOpponentLeft:
+		if time.Since(g.leftAt) > 3*time.Second {
+			// cerrar stream antiguo
+			if g.stream != nil {
+				g.stream.CloseSend()
+			}
+			g.state = StateMenu
 		}
 	}
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	if g.bgImage != nil {
-		screen.DrawImage(g.bgImage, nil)
-	}
-
 	switch g.state {
 	case StateMenu:
-		for _, btn := range g.buttons {
-			ebitenutil.DrawRect(screen, btn.x, btn.y, btn.w, btn.h, color.RGBA{100, 100, 200, 255})
-			text.Draw(screen, btn.label, basicfont.Face7x13, int(btn.x+20), int(btn.y+30), color.White)
-		}
-	case StateWaitingRoom:
-		ebitenutil.DrawRect(screen, 180, 240, 440, 140, color.RGBA{0, 0, 0, 200})
-		text.Draw(screen, "Esperando a que alguien se una a la sala...", basicfont.Face7x13, 200, 300, color.White)
-		text.Draw(screen, fmt.Sprintf("Codigo: %s", g.roomCode), basicfont.Face7x13, 300, 340, color.White)
-	case StateJoinRoom:
-		ebitenutil.DrawRect(screen, 180, 240, 440, 180, color.RGBA{0, 0, 0, 200})
-		text.Draw(screen, "Introduce el codigo de la sala:", basicfont.Face7x13, 200, 270, color.White)
-		// botón INGRESAR
-		btnX, btnY, btnW, btnH := 320.0, 370.0, 160.0, 30.0
-		ebitenutil.DrawRect(screen, btnX, btnY, btnW, btnH, color.RGBA{100, 100, 200, 255})
-		text.Draw(screen, "INGRESAR", basicfont.Face7x13, int(btnX+30), int(btnY+20), color.White)
-		x, y := ebiten.CursorPosition()
-		if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) && float64(x) >= btnX && float64(x) <= btnX+btnW && float64(y) >= btnY && float64(y) <= btnY+btnH {
-			if len(g.inputCode) == 4 {
-				g.roomCode = g.inputCode
-				g.joiningDone = true
-				g.state = StatePlaying
-			} else {
-				text.Draw(screen, "Error: Código inválido", basicfont.Face7x13, 250, 420, color.RGBA{255, 0, 0, 255})
-			}
-		}
-		text.Draw(screen, "Presiona Enter para aceptar", basicfont.Face7x13, 260, 350, color.White)
-		text.Draw(screen, g.inputCode, basicfont.Face7x13, 360, 300, color.White)
-		text.Draw(screen, "Presiona Enter para aceptar", basicfont.Face7x13, 260, 350, color.White)
-	case StateLeaderboard:
-		text.Draw(screen, "Tabla de Posiciones (por implementar)", basicfont.Face7x13, 100, 300, color.White)
-	case StatePlaying:
-		if g.gameState == nil {
-			return
-		}
+		screen.DrawImage(g.menuBg, nil)
+		ebitenutil.DrawRect(screen, g.button.x, g.button.y, g.button.w, g.button.h,
+			color.RGBA{100, 100, 200, 255})
+		text.Draw(screen, g.button.label, basicfont.Face7x13,
+			int(g.button.x+20), int(g.button.y+30), color.White)
+
+	case StateWaiting:
+		screen.DrawImage(g.menuBg, nil)
 		w, h := screen.Size()
-		bx := float64(g.gameState.Ball.X) * float64(w)
-		by := float64(g.gameState.Ball.Y) * float64(h)
-		ebitenutil.DrawRect(screen, bx-5, by-5, 10, 10, color.White)
-		p1y := float64(g.gameState.Paddle1.Y)*float64(h) - 30
-		ebitenutil.DrawRect(screen, 10, p1y, 10, 60, color.White)
-		p2y := float64(g.gameState.Paddle2.Y)*float64(h) - 30
-		ebitenutil.DrawRect(screen, float64(w-20), p2y, 10, 60, color.White)
-		text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score1), basicfont.Face7x13, w/4, 20, color.White)
-		text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score2), basicfont.Face7x13, 3*w/4, 20, color.White)
+		ebitenutil.DrawRect(screen, 0, 0, float64(w), float64(h),
+			color.RGBA{0, 0, 0, 180})
+		msg := "Esperando jugador..."
+		textWidth := len(msg) * 7
+		text.Draw(screen, msg, basicfont.Face7x13,
+			(w-textWidth)/2, h/2, color.White)
+
+	case StatePlaying:
+		screen.DrawImage(g.gameBg, nil)
+		if g.gameState != nil {
+			w, h := screen.Size()
+			bx := float64(g.gameState.Ball.X) * float64(w)
+			by := float64(g.gameState.Ball.Y) * float64(h)
+			ebitenutil.DrawRect(screen, bx-5, by-5, 10, 10, color.White)
+			p1y := float64(g.gameState.Paddle1.Y)*float64(h) - 30
+			ebitenutil.DrawRect(screen, 10, p1y, 10, 60, color.White)
+			p2y := float64(g.gameState.Paddle2.Y)*float64(h) - 30
+			ebitenutil.DrawRect(screen, float64(w-20), p2y, 10, 60, color.White)
+			text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score1),
+				basicfont.Face7x13, w/4, 20, color.White)
+			text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score2),
+				basicfont.Face7x13, 3*w/4, 20, color.White)
+		}
+
+	case StateOpponentLeft:
+		screen.DrawImage(g.menuBg, nil)
+		w, h := screen.Size()
+		ebitenutil.DrawRect(screen, 0, 0, float64(w), float64(h),
+			color.RGBA{0, 0, 0, 180})
+		msg := "El oponente abandonó la partida"
+		textWidth := len(msg) * 7
+		text.Draw(screen, msg, basicfont.Face7x13,
+			(w-textWidth)/2, h/2, color.White)
 	}
 }
 
@@ -205,43 +238,19 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	playerID := flag.String("id", "1", "Player ID: \"1\" or \"2\"")
-	flag.Parse()
-
+	// Conectar gRPC
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("Failed to dial: %v", err)
+		log.Fatalf("Dial failed: %v", err)
 	}
 	defer conn.Close()
 	client := pb.NewPingPongClient(conn)
-	stream, err := client.Play(context.Background())
-	if err != nil {
-		log.Fatalf("Play failed: %v", err)
-	}
-	initial, err := stream.Recv()
-	if err != nil {
-		log.Fatalf("Failed to get initial state: %v", err)
-	}
 
-	game := NewGame()
-	game.stream = stream
-	game.gameState = initial
-	game.playerID = *playerID
-	go game.receiveUpdates()
-
+	game := NewGame(client, conn)
 	ebiten.SetWindowSize(800, 600)
 	ebiten.SetWindowTitle("Ping Pong Multijugador")
+	ebiten.SetRunnableOnUnfocused(true)
 	if err := ebiten.RunGame(game); err != nil {
-		log.Fatalf("Game exited with error: %v", err)
+		log.Fatalf("Game exited: %v", err)
 	}
-}
-
-func generateRoomCode() string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	code := strings.Builder{}
-	rand.Seed(time.Now().UnixNano())
-	for i := 0; i < 4; i++ {
-		code.WriteByte(letters[rand.Intn(len(letters))])
-	}
-	return code.String()
 }

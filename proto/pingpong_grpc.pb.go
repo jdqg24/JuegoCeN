@@ -26,7 +26,6 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PingPongClient interface {
-	// Bidirectional stream: cliente envía acciones, servidor responde con estados
 	Play(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[GameAction, GameState], error)
 }
 
@@ -55,7 +54,6 @@ type PingPong_PlayClient = grpc.BidiStreamingClient[GameAction, GameState]
 // All implementations must embed UnimplementedPingPongServer
 // for forward compatibility.
 type PingPongServer interface {
-	// Bidirectional stream: cliente envía acciones, servidor responde con estados
 	Play(grpc.BidiStreamingServer[GameAction, GameState]) error
 	mustEmbedUnimplementedPingPongServer()
 }

@@ -1,28 +1,28 @@
 syntax = "proto3";
-
 package pingpong;
-option go_package = "./proto;pingpong";
+option go_package = "JuegoCeN/proto;pingpong";
 
 message GameAction {
   string player_id = 1;
-  // e.g. "UP", "DOWN", "NONE"
-  string move = 2;
+  string move      = 2;
+  string room_code = 3;
 }
 
-message Position {
-  float x = 1;
-  float y = 2;
+message Vector {
+  float X = 1;
+  float Y = 2;
 }
 
 message GameState {
-  Position Ball = 1;
-  Position Paddle1 = 2;
-  Position Paddle2 = 3;
-  int32 Score1 = 4;
-  int32 Score2 = 5;
+  string   room_code = 1;
+  Vector   Ball      = 2;
+  Vector   Paddle1   = 3;
+  Vector   Paddle2   = 4;
+  int32    Score1    = 5;
+  int32    Score2    = 6;
+  string   player_id = 7;
 }
 
 service PingPong {
-  // Bidirectional stream: cliente envía acciones, servidor responde con estados
   rpc Play(stream GameAction) returns (stream GameState);
 }
