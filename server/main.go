@@ -1,10 +1,8 @@
-// server/main.go
 package main
 
 import (
 	"fmt"
 	"log"
-	"math"
 	"net"
 	"sync"
 	"time"
@@ -39,8 +37,21 @@ func (gr *GameRoom) run() {
 	ticker := time.NewTicker(16 * time.Millisecond)
 	defer ticker.Stop()
 
-	const padWidth = 10.0 / 800.0
-	const padRange = 0.10
+	// --- Resolución y tamaños en píxeles (constantes sin tipar) ---
+	const (
+		screenW    = 800.0
+		screenH    = 600.0
+		paddleW_px = 10.0
+		paddleH_px = 80.0
+		ballRad_px = 8.0
+	)
+
+	// --- Variables float32 para normalizaciones [0,1] ---
+	padHalfWidth := float32(paddleW_px / (2 * screenW))             // mitad de ancho de pala
+	padHalfHeight := float32((paddleH_px/2 + ballRad_px) / screenH) // radio incluido
+	ballRadX := float32(ballRad_px / screenW)                       // radio bola en X
+	ballRadY := float32(ballRad_px / screenH)                       // radio bola en Y
+	topLimit := float32(1) - ballRadY                               // límite superior
 
 	for range ticker.C {
 		gr.mu.Lock()
@@ -48,26 +59,38 @@ func (gr *GameRoom) run() {
 			gr.mu.Unlock()
 			return
 		}
-		// Física de la bola
+
+		// 1) Mover la bola
 		gr.state.Ball.X += gr.velX
 		gr.state.Ball.Y += gr.velY
-		if gr.state.Ball.Y <= 0 || gr.state.Ball.Y >= 1 {
+
+		// 2) Rebote en techo/suelo
+		if gr.state.Ball.Y <= ballRadY || gr.state.Ball.Y >= topLimit {
 			gr.velY = -gr.velY
 		}
-		leftEdge := gr.state.Paddle1.X + padWidth
-		if gr.velX < 0 &&
-			gr.state.Ball.X <= leftEdge &&
-			math.Abs(float64(gr.state.Ball.Y-gr.state.Paddle1.Y)) < padRange {
-			gr.state.Ball.X = leftEdge
-			gr.velX = -gr.velX
+
+		// 3) Colisión pala izquierda (Paddle1.X es el centro)
+		if gr.velX < 0 {
+			leftEdge := gr.state.Paddle1.X + padHalfWidth
+			dy := gr.state.Ball.Y - gr.state.Paddle1.Y
+			if gr.state.Ball.X-ballRadX <= leftEdge && (dy < padHalfHeight && -dy < padHalfHeight) {
+				// reposiciona justo fuera de la pala
+				gr.state.Ball.X = leftEdge + ballRadX
+				gr.velX = -gr.velX
+			}
 		}
-		rightEdge := gr.state.Paddle2.X - padWidth
-		if gr.velX > 0 &&
-			gr.state.Ball.X >= rightEdge &&
-			math.Abs(float64(gr.state.Ball.Y-gr.state.Paddle2.Y)) < padRange {
-			gr.state.Ball.X = rightEdge
-			gr.velX = -gr.velX
+
+		// 4) Colisión pala derecha
+		if gr.velX > 0 {
+			rightEdge := gr.state.Paddle2.X - padHalfWidth
+			dy := gr.state.Ball.Y - gr.state.Paddle2.Y
+			if gr.state.Ball.X+ballRadX >= rightEdge && (dy < padHalfHeight && -dy < padHalfHeight) {
+				gr.state.Ball.X = rightEdge - ballRadX
+				gr.velX = -gr.velX
+			}
 		}
+
+		// 5) Puntuación y reinicio
 		if gr.state.Ball.X < 0 {
 			gr.state.Score2++
 			gr.state.Ball.X, gr.state.Ball.Y = 0.5, 0.5
@@ -76,12 +99,12 @@ func (gr *GameRoom) run() {
 			gr.state.Ball.X, gr.state.Ball.Y = 0.5, 0.5
 		}
 
-		// Clonar datos para envío
+		// 6) Clonar estado y lista de jugadores
 		st := gr.state
 		pls := append([]pb.PingPong_PlayServer(nil), gr.players...)
 		gr.mu.Unlock()
 
-		// Enviar a cada jugador con su ID
+		// 7) Enviar a cada jugador
 		for i, p := range pls {
 			msg := &pb.GameState{
 				RoomCode: st.RoomCode,

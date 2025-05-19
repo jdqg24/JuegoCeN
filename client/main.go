@@ -99,14 +99,11 @@ func (g *Game) receiveUpdates() {
 			g.errChan <- err
 			return
 		}
-
 		g.lastUpdate = time.Now()
-
 		select {
 		case g.updates <- st:
 		default:
 		}
-
 	}
 }
 
@@ -141,7 +138,6 @@ func (g *Game) Update() error {
 		}
 
 	case StatePlaying:
-
 		if time.Since(g.lastUpdate) > 2*time.Second {
 			g.state = StateOpponentLeft
 			g.leftAt = time.Now()
@@ -175,7 +171,6 @@ func (g *Game) Update() error {
 
 	case StateOpponentLeft:
 		if time.Since(g.leftAt) > 3*time.Second {
-			// cerrar stream antiguo
 			if g.stream != nil {
 				g.stream.CloseSend()
 			}
@@ -186,6 +181,15 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
+	// Definiciones que coinciden con el servidor:
+	const (
+		paddleW  = 10.0
+		paddleH  = 80.0
+		ballRad  = 8.0
+		ballSize = ballRad * 2
+		margin   = 10.0
+	)
+
 	switch g.state {
 	case StateMenu:
 		screen.DrawImage(g.menuBg, nil)
@@ -208,13 +212,33 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(g.gameBg, nil)
 		if g.gameState != nil {
 			w, h := screen.Size()
+
+			// Bola
 			bx := float64(g.gameState.Ball.X) * float64(w)
 			by := float64(g.gameState.Ball.Y) * float64(h)
-			ebitenutil.DrawRect(screen, bx-5, by-5, 10, 10, color.White)
-			p1y := float64(g.gameState.Paddle1.Y)*float64(h) - 30
-			ebitenutil.DrawRect(screen, 10, p1y, 10, 60, color.White)
-			p2y := float64(g.gameState.Paddle2.Y)*float64(h) - 30
-			ebitenutil.DrawRect(screen, float64(w-20), p2y, 10, 60, color.White)
+			ebitenutil.DrawRect(screen,
+				bx-ballRad, by-ballRad,
+				ballSize, ballSize,
+				color.White,
+			)
+
+			// Pala izquierda
+			p1y := float64(g.gameState.Paddle1.Y) * float64(h)
+			ebitenutil.DrawRect(screen,
+				margin, p1y-paddleH/2,
+				paddleW, paddleH,
+				color.White,
+			)
+
+			// Pala derecha
+			p2y := float64(g.gameState.Paddle2.Y) * float64(h)
+			ebitenutil.DrawRect(screen,
+				float64(w)-margin-paddleW, p2y-paddleH/2,
+				paddleW, paddleH,
+				color.White,
+			)
+
+			// Marcador
 			text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score1),
 				basicfont.Face7x13, w/4, 20, color.White)
 			text.Draw(screen, fmt.Sprintf("%d", g.gameState.Score2),
